@@ -1,4 +1,4 @@
-<!-- BANNER IMAGE HERE -->
+<p align="center"><img src="docs/banner.svg" alt="FIRSTKILLER" width="100%"/></p>
 
 <p align="center">
   <a href="#quick-start"><img src="https://img.shields.io/badge/node-%3E%3D22-00ff88?style=flat-square&logo=node.js&logoColor=white" alt="Node 22+"></a>
@@ -19,7 +19,12 @@
 
 A Solana bot that watches pump.fun V3 for new token launches in real-time and sends a buy transaction as a Jito bundle to land in the same block as the token creation.
 
-Traditional bots send transactions through RPC and hope they land. Firstblood sends through Jito Block Engine as a bundle, which means your buy is included by the validator as a unit — either the whole bundle lands or nothing does. No partial fills, no wasted fees on failed txs.
+Traditional bots send transactions through RPC and hope they land. Firstblood sends through Jito Block Engine as a bundle, which means your buy is included by the validator as a unit: either the whole bundle lands or nothing does. No partial fills, no wasted fees on failed txs.
+
+<p align="center"><img src="docs/hunt.svg" alt="The hunt: eight steps from launch to sell" width="100%"/></p>
+
+<details>
+<summary>Same flow as text</summary>
 
 ```
  new token created on pump.fun
@@ -63,6 +68,8 @@ Traditional bots send transactions through RPC and hope they land. Firstblood se
  └─────────────────────────┘
 ```
 
+</details>
+
 ---
 
 ## Why Jito Bundles
@@ -79,7 +86,7 @@ you → Jito Block Engine → validator runs your bundle atomically → lands (o
 
 | | Regular TX | Jito Bundle |
 |-|-----------|-------------|
-| Landing guarantee | No — can be dropped | Atomic — all or nothing |
+| Landing guarantee | No: can be dropped | Atomic: all or nothing |
 | Speed | 1-5 seconds | Same block as trigger |
 | Failed tx cost | You pay fees anyway | No landing = no fees |
 | MEV protection | Exposed to frontrunners | Bundle is private until execution |
@@ -119,7 +126,7 @@ Program log: Instruction: BondingCurveV3       → new token + dev buy
 Program log: Instruction: BondingCurveJupiter  → new token via Jupiter + dev buy
 ```
 
-The `BondingCurveV3` instruction creates the bonding curve AND executes the dev's initial buy atomically. The trade event emitted from it contains the dev buy amount and post-buy reserves — which is exactly what we need to calculate our entry.
+The `BondingCurveV3` instruction creates the bonding curve AND executes the dev's initial buy atomically. The trade event emitted from it contains the dev buy amount and post-buy reserves, which is exactly what we need to calculate our entry.
 
 ### How buys and sells are classified
 
@@ -134,7 +141,7 @@ The bot only acts on create events. It ignores subsequent buy/sell events from o
 
 ### Key insight: zero-RPC backrun
 
-The trade event's `virtualSolReserves` and `virtualTokenReserves` fields reflect the state **after** the dev buy. This means we can calculate our buy output directly from the event data without an extra `getAccountInfo` RPC call — saving ~100-200ms of latency per opportunity.
+The trade event's `virtualSolReserves` and `virtualTokenReserves` fields reflect the state **after** the dev buy. This means we can calculate our buy output directly from the event data without an extra `getAccountInfo` RPC call, saving ~100-200ms of latency per opportunity.
 
 ---
 
@@ -152,9 +159,14 @@ sell:
   solOut = (tokensIn × virtualSolReserves) / (virtualTokenReserves + tokensIn)
 ```
 
+<p align="center"><img src="docs/curve.svg" alt="Bonding curve with entry and take profit" width="100%"/></p>
+
+> [!NOTE]
+> The chart uses the classic launch reserves of 30 virtual SOL. Price grows with the square of the SOL in the curve, so a 2.0x take profit after a 0.5 SOL dev buy needs roughly 13 SOL of buys landing after you. A full dump can only push vSOL back to 30, so right after a small dev buy the floor sits just under the entry and a 0.5x stop loss is rarely reachable: those positions close on the timeout.
+
 ### Slippage protection
 
-Buy transactions include a `minTokensOut` field — the minimum tokens you'll accept. If the price moves against you between event detection and bundle landing, the transaction reverts instead of executing at a bad price.
+Buy transactions include a `minTokensOut` field: the minimum tokens you'll accept. If the price moves against you between event detection and bundle landing, the transaction reverts instead of executing at a bad price.
 
 ```
 minTokensOut = expectedTokens × (1 - slippageBps / 10000)
@@ -191,14 +203,14 @@ program = 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P
 
 ## Transaction Construction
 
-### Buy transaction — 5 instructions
+### Buy transaction: 5 instructions
 
 ```
  Instruction                    Purpose
  ────────────────────────────── ──────────────────────────────────
  1. SetComputeUnitLimit         200,000 CU (V3 buy + ATA creation)
  2. SetComputeUnitPrice         100,000 microLamports per CU
- 3. CreateAssociatedTokenAcct   idempotent — safe if ATA exists
+ 3. CreateAssociatedTokenAcct   idempotent: safe if ATA exists
  4. BuyV3                       pump.fun buy instruction
  5. SystemProgram.transfer      Jito tip to random tip account
 ```
@@ -208,8 +220,8 @@ program = 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P
 ```
  Offset   Size   Field
  0        8      Discriminator    07051dc4f5176550
- 8        8      minTokensOut     u64 LE — minimum tokens to accept
- 16       8      maxSolIn         u64 LE — maximum SOL to spend
+ 8        8      minTokensOut     u64 LE: minimum tokens to accept
+ 16       8      maxSolIn         u64 LE: maximum SOL to spend
 ```
 
 ### BuyV3 accounts (13)
@@ -237,8 +249,8 @@ program = 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P
 ```
  Offset   Size   Field
  0        8      Discriminator    1c92de7726c469d5
- 8        8      tokenAmount      u64 LE — tokens to sell
- 16       8      minSolOut        u64 LE — minimum SOL to receive
+ 8        8      tokenAmount      u64 LE: tokens to sell
+ 16       8      minSolOut        u64 LE: minimum SOL to receive
 ```
 
 ### Why VersionedTransaction v0
@@ -270,6 +282,27 @@ Legacy transactions have a 1232-byte limit and use direct account addresses. V0 
 6. Receive bundle ID
 7. On failure: 1 automatic retry with same tip (no escalation)
 8. 5-second timeout per request
+```
+
+```mermaid
+%%{init: {'theme':'dark','themeVariables':{'primaryColor':'#2a070d','primaryBorderColor':'#e0102a','primaryTextColor':'#f4eeee','lineColor':'#e0102a','actorBkg':'#2a070d','actorBorder':'#e0102a','actorTextColor':'#f4eeee','signalColor':'#e0102a','signalTextColor':'#f4eeee','noteBkgColor':'#7a0010','noteTextColor':'#f4eeee'}}}%%
+sequenceDiagram
+    participant D as Dev
+    participant P as pump.fun V3
+    participant H as Helius WS
+    participant B as Bot
+    participant J as Jito Block Engine
+    D->>P: create + dev buy
+    P-->>H: program logs
+    H-->>B: logsSubscribe push
+    Note over B: parse trade event, run filters,<br/>reserves straight from the event
+    B->>J: sendBundle [BuyV3 + tip]
+    J-->>P: bundle lands
+    loop every 3 s
+        B->>P: read bonding curve
+    end
+    Note over B: TP 2.0x, SL 0.5x, 60 s timeout<br/>or graduation
+    B->>J: sendBundle [SellV3 + tip]
 ```
 
 ### Tip accounts
@@ -319,6 +352,8 @@ After a successful buy, the bot monitors the position:
 
 ### Exit rules
 
+<p align="center"><img src="docs/exit.svg" alt="Take profit, stop loss and timeout" width="100%"/></p>
+
 | Trigger | Condition | Action |
 |---------|-----------|--------|
 | Take Profit | `pnl >= (TP - 1)` → price doubled at TP=2.0 | Sell via Jito bundle |
@@ -338,6 +373,8 @@ Position monitoring fetches bonding curve state via `getAccountInfo`. To avoid b
 ## Filtering Logic
 
 The bot runs these filters in order. Each one can skip the opportunity:
+
+<p align="center"><img src="docs/filter.svg" alt="Filter funnel" width="100%"/></p>
 
 ```
  ┌─────────────────────────────┐
@@ -371,7 +408,7 @@ The bot runs these filters in order. Each one can skip the opportunity:
 
 ### Why min dev buy matters
 
-Tokens where the dev bought less than 0.5 SOL are often low-effort scams with no real interest behind them. The dev buy size is a simple signal: if the creator has skin in the game, the token is more likely to attract buyers. This is not a guarantee — it's just a first filter.
+Tokens where the dev bought less than 0.5 SOL are often low-effort scams with no real interest behind them. The dev buy size is a simple signal: if the creator has skin in the game, the token is more likely to attract buyers. This is not a guarantee: it's just a first filter.
 
 ---
 
@@ -424,10 +461,10 @@ npm run dry
 
 | Variable | Default | What it does |
 |----------|---------|-------------|
-| `RPC_WSS` | — | Helius WebSocket endpoint for log subscriptions |
-| `RPC_URL` | — | Helius HTTP endpoint for RPC calls |
-| `HELIUS_API_KEY` | — | Helius API key |
-| `WALLET_PRIVATE_KEY` | — | Base58 private key (not needed for --dry-run) |
+| `RPC_WSS` | - | Helius WebSocket endpoint for log subscriptions |
+| `RPC_URL` | - | Helius HTTP endpoint for RPC calls |
+| `HELIUS_API_KEY` | - | Helius API key |
+| `WALLET_PRIVATE_KEY` | - | Base58 private key (not needed for --dry-run) |
 | `BACKRUN_BUY_SOL` | `0.1` | SOL to spend per buy |
 | `BACKRUN_JITO_TIP` | `0.001` | SOL tip per Jito bundle |
 | `BACKRUN_TAKE_PROFIT` | `2.0` | Sell at 2x entry price |
@@ -453,6 +490,9 @@ npm run dry
 node bot.js --dry-run
 ```
 
+<p align="center"><img src="docs/terminal.svg" alt="Example dry run output" width="100%"/></p>
+<p align="center"><sub>example output, mints are placeholders</sub></p>
+
 In dry-run mode:
 - Generates an ephemeral wallet (no real keys needed)
 - Detects tokens and runs all filters on live data
@@ -470,6 +510,8 @@ Use this to:
 ---
 
 ## Architecture
+
+<p align="center"><img src="docs/anatomy.svg" alt="Module map" width="100%"/></p>
 
 ```
 bot.js                 entry point, orchestration, SIGINT handler
@@ -599,7 +641,7 @@ The `seenMints` map tracks recently-seen token mints to prevent duplicate proces
 |---------|-------|-----|
 | `Missing required config: rpcWss` | No `.env` file | `cp .env.example .env` and fill in values |
 | `WebSocket error: getaddrinfo ENOTFOUND` | Bad RPC URL | Check `RPC_WSS` is a valid `wss://` URL |
-| `WebSocket disconnected, reconnecting...` | RPC dropped connection | Normal — auto-reconnects with backoff |
+| `WebSocket disconnected, reconnecting...` | RPC dropped connection | Normal: auto-reconnects with backoff |
 | `Jito error [-32602]: ...` | Invalid transaction data | Check wallet balance, mint validity |
 | `Jito send failed: request timeout (5s)` | Jito endpoint slow | Retries once automatically |
 | Bot runs but never buys | Filters too strict | Lower `MIN_DEV_BUY`, check logs for filter reasons |
@@ -610,7 +652,7 @@ The `seenMints` map tracks recently-seen token mints to prevent duplicate proces
 
 ## Disclaimer
 
-This is experimental software for educational and research purposes. Memecoin trading carries extreme risk — the vast majority of pump.fun tokens go to zero within minutes. You can and will lose money. The bot makes no guarantees about profitability, bundle landing, or execution quality. Always start with `--dry-run`. Use real funds at your own risk and only with money you can afford to lose entirely.
+This is experimental software for educational and research purposes. Memecoin trading carries extreme risk: the vast majority of pump.fun tokens go to zero within minutes. You can and will lose money. The bot makes no guarantees about profitability, bundle landing, or execution quality. Always start with `--dry-run`. Use real funds at your own risk and only with money you can afford to lose entirely.
 
 ---
 
